@@ -1,482 +1,314 @@
 import os
-
 import streamlit as st
-
 from dotenv import load_dotenv
 from google import genai
 
 from tools import calculator, get_current_time
+from planner import decide_tool
 from pdf_tool import search_pdf
 from memory import ConversationMemory
 
 
-# ==================================================
-# SETUP
-# ==================================================
+# ============================================================
+# LOAD ENVIRONMENT VARIABLES
+# ============================================================
 
 load_dotenv()
 
+API_KEY = os.getenv("GEMINI_API_KEY")
+
+
+# ============================================================
+# CHECK API KEY
+# ============================================================
+
+if not API_KEY:
+    st.error(
+        "❌ GEMINI_API_KEY not found.\n\n"
+        "Please create a .env file in the project root "
+        "and add your Gemini API key."
+    )
+    st.stop()
+
+
+# ============================================================
+# GEMINI CLIENT
+# ============================================================
+
+client = genai.Client(api_key=API_KEY)
+
+MODEL_NAME = "gemini-3.8-flash"
+
+
+# ============================================================
+# STREAMLIT PAGE
+# ============================================================
+
 st.set_page_config(
     page_title="My AI Agent",
-    page_icon="🤖"
+    page_icon="🤖",
+    layout="centered"
 )
 
 
-# ==================================================
-# SESSION MEMORY
-# ==================================================
+# ============================================================
+# TITLE
+# ============================================================
+
+st.title("🤖 My AI Agent")
+
+st.caption(
+    "Gemini • Tools • PDF/RAG • Memory"
+)
+
+
+# ============================================================
+# MEMORY
+# ============================================================
 
 if "memory" not in st.session_state:
     st.session_state.memory = ConversationMemory()
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-
 memory = st.session_state.memory
 
 
-# ==================================================
-# GEMINI CLIENT
-# ==================================================
-
-def get_gemini_client():
-
-    api_key = os.getenv("GEMINI_API_KEY")
-
-    if not api_key:
-        return None
-
-    return genai.Client(
-        api_key=api_key
-    )
-
-
-# ==================================================
-# GEMINI FUNCTION
-# ==================================================
-
-def ask_gemini(question):
-
-    client = get_gemini_client()
-
-    if client is None:
-        return (
-            "Gemini API key is not configured. "
-            "Please check your .env file."
-        )
-
-    # Save user message
-    memory.add_message(
-        "user",
-        question
-    )
-
-    # Build conversation
-    conversation = ""
-
-    for message in memory.get_history():
-
-        conversation += (
-            message["role"]
-            + ": "
-            + message["message"]
-            + "\n"
-        )
-
-    interaction = client.interactions.create(
-
-        model="gemini-3.8-flash",
-
-        input=f"""
-You are a helpful AI assistant.
-
-Use the conversation history to understand
-the user's latest question.
-
-Conversation history:
-{conversation}
-
-Answer the latest question clearly,
-simply and accurately.
-"""
-    )
-
-    answer = interaction.output_text
-
-    # Save Gemini response
-    memory.add_message(
-        "assistant",
-        answer
-    )
-
-    return answer
-
-
-# ==================================================
-# TITLE
-# ==================================================
-
-st.title("🤖 My AI Agent")
-
-st.write(
-    "Gemini + Calculator + Current Time + "
-    "PDF/RAG + Memory"
-)
-
-
-# ==================================================
-# CLEAR CONVERSATION
-# ==================================================
+# ============================================================
+# CLEAR CHAT
+# ============================================================
 
 if st.button("🗑️ Clear Conversation"):
 
     memory.clear()
 
-    st.session_state.messages = []
-
     st.rerun()
 
 
-# ==================================================
-# DISPLAY PREVIOUS MESSAGES
-# ==================================================
+# ============================================================
+# GEMINI FUNCTION
+# ============================================================
 
-for message in st.session_state.messages:
-
-    with st.chat_message(message["role"]):
-
-        st.write(message["content"])
-
-
-# ==================================================
-# CHAT INPUT
-# ==================================================
-
-user_input = st.chat_input(
-    "Ask your AI agent..."
-)
-
-
-# ==================================================
-# PROCESS USER QUESTION
-# ==================================================
-
-if user_input:
-
-    # ----------------------------------------------
-    # Display user message
-    # ----------------------------------------------
-
-    st.session_state.messages.append({
-        "role": "user",
-        "content": user_input
-    })
-
-    with st.chat_message("user"):
-
-        st.write(user_input)
-
-
-    text = user_input.lower().strip()
-
+def ask_gemini(question, context=None):
 
     try:
 
-        # ==========================================
-        # CALCULATOR
-        # ==========================================
+        # ----------------------------------------------------
+        # PDF + RAG QUESTION
+        # ----------------------------------------------------
 
-        if any(
-            symbol in text
-            for symbol in [
-                "+",
-                "-",
-                "*",
-                "/",
-                "%"
-            ]
-        ):
+        if context:
 
-            st.write(
-                "🔧 Tool used: Calculator"
-            )
+            prompt = f"""
+You are a helpful AI assistant answering questions
+using information retrieved from a DBMS PDF.
 
-            result = calculator(
-                user_input
-            )
+Use the PDF context below to answer the user's question.
 
-            if result == "Invalid expression":
+PDF CONTEXT:
+{context}
 
-                response = (
-                    "❌ Invalid mathematical expression."
-                )
+USER QUESTION:
+{question}
 
-                st.error(response)
+Instructions:
+- Answer clearly and accurately.
+- Use simple language.
+- Give a proper explanation.
+- Use the PDF information when relevant.
+- Do not invent information that is not supported
+  by the provided context.
+- If the context does not contain enough information,
+  clearly say that.
+"""
 
-            else:
-
-                response = f"Result: {result}"
-
-                st.success(response)
-
-
-        # ==========================================
-        # CURRENT TIME
-        # ==========================================
-
-        elif "time" in text:
-
-            st.write(
-                "🔧 Tool used: Current Time"
-            )
-
-            result = get_current_time()
-
-            response = (
-                f"Current time: {result}"
-            )
-
-            st.success(response)
-
-
-        # ==========================================
-        # PDF / RAG
-        # ==========================================
-
-        elif any(
-            keyword in text
-            for keyword in [
-                "dbms",
-                "database",
-                "normalization",
-                "normal form",
-                "sql",
-                "transaction",
-                "primary key",
-                "foreign key",
-                "acid",
-                "index",
-                "relational"
-            ]
-        ):
-
-            st.write(
-                "🔧 Tool used: PDF/RAG"
-            )
-
-            result = search_pdf(
-                user_input
-            )
-
-            if not result.strip():
-
-                response = (
-                    "I couldn't find relevant "
-                    "information in the PDF."
-                )
-
-                st.warning(response)
-
-            else:
-
-                response = result
-
-                with st.chat_message("assistant"):
-
-                    st.write(response)
-
-
-        # ==========================================
-        # GEMINI
-        # ==========================================
+        # ----------------------------------------------------
+        # NORMAL QUESTION
+        # ----------------------------------------------------
 
         else:
 
-            st.write(
-                "🤖 Tool used: Gemini"
+            prompt = f"""
+You are a helpful AI assistant.
+
+Answer the following question clearly and simply.
+
+USER QUESTION:
+{question}
+"""
+
+        # ----------------------------------------------------
+        # CALL GEMINI
+        # ----------------------------------------------------
+
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=prompt
+        )
+
+        # ----------------------------------------------------
+        # GET RESPONSE
+        # ----------------------------------------------------
+
+        if response.text:
+            return response.text
+
+        return "⚠️ Gemini did not return a response."
+
+    # --------------------------------------------------------
+    # API ERROR
+    # --------------------------------------------------------
+
+    except Exception as e:
+
+        error_message = str(e)
+
+        # Rate limit / quota
+        if "429" in error_message:
+
+            return (
+                "⚠️ Gemini is temporarily unavailable because "
+                "the API rate limit has been reached.\n\n"
+                "Your local AI Agent tools are still working. "
+                "Please try Gemini again after the quota resets."
             )
 
-            response = ask_gemini(
-                user_input
+        # API key error
+        if "401" in error_message or "API key" in error_message:
+
+            return (
+                "❌ Gemini API key error.\n\n"
+                "Please check your GEMINI_API_KEY in the "
+                ".env file."
             )
 
-            with st.chat_message("assistant"):
-
-                st.write(response)
-
-
-        # ==========================================
-        # SAVE LOCAL TOOL RESPONSE
-        # ==========================================
-
-        if not text.startswith("error"):
-
-            # Gemini already saves its response
-            # inside ask_gemini()
-
-            if not (
-                "🤖 Tool used: Gemini"
-                in response
-                if isinstance(response, str)
-                else False
-            ):
-
-                pass
+        # Other errors
+        return f"❌ Gemini error: {error_message}"
 
 
-        # ==========================================
-        # SAVE RESPONSE TO STREAMLIT CHAT
-        # ==========================================
+# ============================================================
+# DISPLAY CHAT HISTORY
+# ============================================================
 
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": response
-        })
+for message in memory.get_history():
 
+    if message["role"] == "user":
 
-        # ==========================================
-        # DISPLAY LOCAL TOOL RESPONSE
-        # ==========================================
+        with st.chat_message("user"):
+            st.write(message["message"])
 
-        if not any(
-            keyword in text
-            for keyword in [
-                "dbms",
-                "database",
-                "normalization",
-                "normal form",
-                "sql",
-                "transaction",
-                "primary key",
-                "foreign key",
-                "acid",
-                "index",
-                "relational"
-            ]
-        ) and not (
-            "time" in text
-        ) and not any(
-            symbol in text
-            for symbol in [
-                "+",
-                "-",
-                "*",
-                "/",
-                "%"
-            ]
-        ):
+    elif message["role"] == "assistant":
 
-            # Gemini response already displayed
-            pass
-
-        elif not (
-            any(
-                keyword in text
-                for keyword in [
-                    "dbms",
-                    "database",
-                    "normalization",
-                    "normal form",
-                    "sql",
-                    "transaction",
-                    "primary key",
-                    "foreign key",
-                    "acid",
-                    "index",
-                    "relational"
-                ]
-            )
-        ):
-
-            with st.chat_message("assistant"):
-
-                st.write(response)
+        with st.chat_message("assistant"):
+            st.write(message["message"])
 
 
-    except Exception as error:
+# ============================================================
+# CHAT INPUT
+# ============================================================
 
-        error_text = str(error)
-
-        # ==========================================
-        # GEMINI QUOTA ERROR
-        # ==========================================
-
-        if "429" in error_text:
-
-            response = (
-                "⚠️ Gemini API quota has been exceeded. "
-                "Your local Calculator, Time and PDF/RAG "
-                "tools can still be used."
-            )
-
-            with st.chat_message("assistant"):
-
-                st.warning(response)
+user_input = st.chat_input(
+    "Ask me anything..."
+)
 
 
-        # ==========================================
-        # API KEY ERROR
-        # ==========================================
+# ============================================================
+# PROCESS QUESTION
+# ============================================================
 
-        elif (
-            "API key" in error_text
-            or "No API key" in error_text
-        ):
+if user_input:
 
-            response = (
-                "⚠️ Gemini API key is missing or invalid. "
-                "Please check your .env file."
-            )
+    # --------------------------------------------------------
+    # SHOW USER MESSAGE
+    # --------------------------------------------------------
 
-            with st.chat_message("assistant"):
+    with st.chat_message("user"):
+        st.write(user_input)
 
-                st.error(response)
+    # --------------------------------------------------------
+    # SAVE USER MESSAGE
+    # --------------------------------------------------------
 
-
-        # ==========================================
-        # OTHER ERROR
-        # ==========================================
-
-        else:
-
-            response = (
-                "❌ Something went wrong while "
-                "processing your request."
-            )
-
-            with st.chat_message("assistant"):
-
-                st.error(response)
-
-                st.caption(
-                    f"Error details: {error}"
-                )
-
-
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": response
-        })
-
-
-# ==================================================
-# SIDEBAR
-# ==================================================
-
-with st.sidebar:
-
-    st.header("🛠️ Available Tools")
-
-    st.write("🧮 Calculator")
-    st.write("🕐 Current Time")
-    st.write("📚 DBMS PDF / RAG")
-    st.write("🤖 Gemini AI")
-    st.write("🧠 Conversation Memory")
-
-    st.divider()
-
-    st.write(
-        "Built with Python, Streamlit "
-        "and Gemini API."
+    memory.add_message(
+        "user",
+        user_input
     )
+
+    # --------------------------------------------------------
+    # AGENT DECISION
+    # --------------------------------------------------------
+
+    tool_used = decide_tool(user_input)
+
+
+    # ========================================================
+    # CALCULATOR
+    # ========================================================
+
+    if tool_used == "calculator":
+
+        st.info("🧮 Tool used: Calculator")
+
+        result = calculator(user_input)
+
+        response = f"Result: {result}"
+
+
+    # ========================================================
+    # CURRENT TIME
+    # ========================================================
+
+    elif tool_used == "get_current_time":
+
+        st.info("🕐 Tool used: Current Time")
+
+        result = get_current_time()
+
+        response = f"Current time: {result}"
+
+
+    # ========================================================
+    # PDF + RAG
+    # ========================================================
+
+    elif tool_used == "pdf":
+
+        st.info("📚 Tool used: PDF + RAG")
+
+        # Search relevant information
+        context = search_pdf(user_input)
+
+        # Give retrieved information to Gemini
+        response = ask_gemini(
+            user_input,
+            context
+        )
+
+
+    # ========================================================
+    # GENERAL GEMINI
+    # ========================================================
+
+    else:
+
+        st.info("🤖 Tool used: Gemini")
+
+        response = ask_gemini(
+            user_input
+        )
+
+
+    # ========================================================
+    # SAVE AI RESPONSE
+    # ========================================================
+
+    memory.add_message(
+        "assistant",
+        response
+    )
+
+
+    # ========================================================
+    # DISPLAY AI RESPONSE
+    # ========================================================
+
+    with st.chat_message("assistant"):
+        st.write(response)

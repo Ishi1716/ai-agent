@@ -1,6 +1,6 @@
-# 🤖 AI Agent
+# 🤖 My AI Agent
 
-A beginner-friendly AI Agent built with Python, Gemini API, Streamlit, RAG, tools, and conversation memory.
+A beginner-friendly AI Agent built with Python, Google Gemini API, Streamlit, RAG, tools, and conversation memory.
 
 ## 🚀 Features
 
@@ -8,46 +8,41 @@ A beginner-friendly AI Agent built with Python, Gemini API, Streamlit, RAG, tool
 - 🧮 Calculator tool
 - 🕐 Current time tool
 - 📚 PDF question answering
-- 🔎 RAG-based document search
+- 🔎 TF-IDF based RAG
 - 🧠 Conversation memory
 - 💬 Streamlit chat interface
-- 🛠️ Tool-based agent workflow
+- 🛠️ Intelligent tool selection
+- ⚠️ API error and rate-limit handling
 
-## 🏗️ Tech Stack
-
-- Python
-- Google Gemini API
-- Streamlit
-- Scikit-learn
-- PyPDF
-- Python-dotenv
-- Git & GitHub
-
-## 📂 Project Structure
+## 🧠 Architecture
 
 ```text
-ai-agent/
-│
-├── app.py
-├── tools.py
-├── planner.py
-├── memory.py
-├── pdf_reader.py
-├── pdf_tool.py
-├── rag.py
-├── requirements.txt
-├── .gitignore
-├── README.md
-│
-├── pdfs/
-│   └── DBMS Notes.pdf
-│
-├── legacy/
-│   ├── agent.py
-│   ├── final_agent.py
-│   ├── gemini_agent.py
-│   ├── local_agent.py
-│   ├── memory_agent.py
-│   └── smart_agent.py
-│
-└── test_*.py
+                    User
+                      │
+                      ▼
+                Streamlit UI
+                      │
+                      ▼
+               Agent Planner
+                      │
+        ┌─────────────┼─────────────┐
+        ▼             ▼             ▼
+   Calculator    Current Time    PDF / RAG
+        │             │             │
+        │             │        PDF Reader
+        │             │             │
+        │             │          Chunking
+        │             │             │
+        │             │        TF-IDF Search
+        │             │             │
+        └─────────────┴─────────────┘
+                      │
+                      ▼
+                 Gemini API
+                      │
+                      ▼
+                 AI Response
+                      │
+                      ▼
+                Conversation
+                   Memory

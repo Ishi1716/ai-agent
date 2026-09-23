@@ -1,5 +1,4 @@
 import os
-from datetime import datetime
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -25,11 +24,12 @@ st.set_page_config(
 
 
 # ============================================================
-# GEMINI SETUP
+# GEMINI API SETUP
 # ============================================================
 
 API_KEY = os.getenv("GEMINI_API_KEY")
 
+# Streamlit Cloud Secrets
 if not API_KEY:
     try:
         API_KEY = st.secrets["GEMINI_API_KEY"]
@@ -50,7 +50,7 @@ MODEL_NAME = "gemini-3.8-flash"
 
 
 # ============================================================
-# MEMORY
+# CONVERSATION MEMORY
 # ============================================================
 
 if "memory" not in st.session_state:
@@ -68,21 +68,26 @@ def ask_gemini(question, context=None):
 
     if client is None:
         return (
-            "⚠️ Gemini is not configured right now. "
-            "Please check the API configuration."
+            "⚠️ Gemini is not configured right now.\n\n"
+            "Please check the Gemini API configuration."
         )
+
+    # --------------------------------------------------------
+    # PDF / RAG prompt
+    # --------------------------------------------------------
 
     if context:
 
         prompt = f"""
-You are an AI assistant answering questions using the provided document context.
+You are a helpful AI assistant answering questions using
+the provided document context.
 
-Use the context below to answer the user's question.
+Use the document context to answer the user's question.
 
-If the answer is not available in the context, clearly say that the information
-was not found in the provided document.
+If the answer cannot be found in the document context,
+say that the information was not found in the provided document.
 
-Keep the explanation simple and useful.
+Give a clear and simple explanation.
 
 DOCUMENT CONTEXT:
 {context}
@@ -90,6 +95,10 @@ DOCUMENT CONTEXT:
 USER QUESTION:
 {question}
 """
+
+    # --------------------------------------------------------
+    # Normal Gemini prompt
+    # --------------------------------------------------------
 
     else:
 
@@ -110,15 +119,26 @@ USER QUESTION:
         )
 
         if response and response.text:
+
             return response.text
 
         return "⚠️ Gemini did not return an answer."
+
 
     except Exception as e:
 
         error_text = str(e).lower()
 
-        if "429" in error_text or "rate" in error_text or "quota" in error_text:
+        # ----------------------------------------------------
+        # Rate limit / quota
+        # ----------------------------------------------------
+
+        if (
+            "429" in error_text
+            or "rate" in error_text
+            or "quota" in error_text
+        ):
+
             return (
                 "⚠️ Gemini is temporarily unavailable because "
                 "the API usage limit has been reached.\n\n"
@@ -126,16 +146,59 @@ USER QUESTION:
                 "Please try Gemini again later."
             )
 
-        if "503" in error_text or "unavailable" in error_text:
+        # ----------------------------------------------------
+        # Model temporarily unavailable
+        # ----------------------------------------------------
+
+        if (
+            "503" in error_text
+            or "unavailable" in error_text
+        ):
+
             return (
                 "⚠️ Gemini is temporarily unavailable right now.\n\n"
                 "Please try again in a little while."
             )
 
+        # ----------------------------------------------------
+        # Other Gemini errors
+        # ----------------------------------------------------
+
         return (
             "⚠️ Gemini is temporarily unavailable right now.\n\n"
             "Please try again later."
         )
+
+
+# ============================================================
+# MEMORY SEARCH
+# ============================================================
+
+def get_name_from_memory():
+
+    remembered_name = None
+
+    for message in memory.get_history():
+
+        if message["role"] != "user":
+            continue
+
+        previous_message = message["message"].strip()
+
+        lower_message = previous_message.lower()
+
+        # Examples:
+        # My name is Ishita
+        # my name is Ishita.
+
+        if lower_message.startswith("my name is "):
+
+            name = previous_message[11:].strip()
+
+            if name:
+                remembered_name = name.rstrip(".!?")
+
+    return remembered_name
 
 
 # ============================================================
@@ -161,7 +224,7 @@ if st.button("🗑️ Clear Conversation"):
 
 
 # ============================================================
-# DISPLAY CHAT HISTORY
+# DISPLAY PREVIOUS CONVERSATION
 # ============================================================
 
 for message in memory.get_history():
@@ -186,9 +249,9 @@ user_input = st.chat_input("Ask me anything...")
 
 if user_input:
 
-    # --------------------------------------------------------
-    # Save user message
-    # --------------------------------------------------------
+    # ========================================================
+    # SAVE USER MESSAGE
+    # ========================================================
 
     memory.add_message(
         "user",
@@ -196,17 +259,17 @@ if user_input:
     )
 
 
-    # --------------------------------------------------------
-    # Display user message
-    # --------------------------------------------------------
+    # ========================================================
+    # DISPLAY USER MESSAGE
+    # ========================================================
 
     with st.chat_message("user"):
         st.write(user_input)
 
 
-    # --------------------------------------------------------
-    # Decide which tool to use
-    # --------------------------------------------------------
+    # ========================================================
+    # DECIDE WHICH TOOL TO USE
+    # ========================================================
 
     tool = decide_tool(user_input)
 
@@ -254,21 +317,72 @@ if user_input:
 
 
     # ========================================================
-    # GEMINI
+    # MEMORY
     # ========================================================
 
     else:
 
-        tool_name = "🤖 Gemini"
+        lower_input = user_input.lower().strip()
 
-        answer = ask_gemini(
-            user_input
-        )
+        # ----------------------------------------------------
+        # Store name in memory
+        # ----------------------------------------------------
+
+        if lower_input.startswith("my name is "):
+
+            name = user_input[11:].strip()
+            name = name.rstrip(".!?")
+
+            tool_name = "🧠 Conversation Memory"
+
+            answer = (
+                f"Nice to meet you, {name}! "
+                "I'll remember your name during this conversation."
+            )
 
 
-    # --------------------------------------------------------
-    # Save assistant response
-    # --------------------------------------------------------
+        # ----------------------------------------------------
+        # Retrieve name from memory
+        # ----------------------------------------------------
+
+        elif (
+            "what is my name" in lower_input
+            or "what's my name" in lower_input
+            or "do you remember my name" in lower_input
+        ):
+
+            remembered_name = get_name_from_memory()
+
+            tool_name = "🧠 Conversation Memory"
+
+            if remembered_name:
+
+                answer = f"Your name is {remembered_name}."
+
+            else:
+
+                answer = (
+                    "I don't know your name yet. "
+                    "Tell me by saying: My name is ..."
+                )
+
+
+        # ----------------------------------------------------
+        # Normal Gemini question
+        # ----------------------------------------------------
+
+        else:
+
+            tool_name = "🤖 Gemini"
+
+            answer = ask_gemini(
+                user_input
+            )
+
+
+    # ========================================================
+    # SAVE ASSISTANT RESPONSE
+    # ========================================================
 
     memory.add_message(
         "assistant",
@@ -276,18 +390,18 @@ if user_input:
     )
 
 
-    # --------------------------------------------------------
-    # Display tool used
-    # --------------------------------------------------------
+    # ========================================================
+    # DISPLAY TOOL USED
+    # ========================================================
 
     st.info(
         f"🔧 Tool used: {tool_name}"
     )
 
 
-    # --------------------------------------------------------
-    # Display answer
-    # --------------------------------------------------------
+    # ========================================================
+    # DISPLAY ANSWER
+    # ========================================================
 
     with st.chat_message("assistant"):
         st.write(answer)

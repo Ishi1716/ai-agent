@@ -66,11 +66,16 @@ memory = st.session_state.memory
 
 def ask_gemini(question, context=None):
 
+    # --------------------------------------------------------
+    # Check API configuration
+    # --------------------------------------------------------
+
     if client is None:
         return (
             "⚠️ Gemini is not configured right now.\n\n"
             "Please check the Gemini API configuration."
         )
+
 
     # --------------------------------------------------------
     # PDF / RAG prompt
@@ -96,6 +101,7 @@ USER QUESTION:
 {question}
 """
 
+
     # --------------------------------------------------------
     # Normal Gemini prompt
     # --------------------------------------------------------
@@ -111,6 +117,11 @@ USER QUESTION:
 {question}
 """
 
+
+    # --------------------------------------------------------
+    # Call Gemini
+    # --------------------------------------------------------
+
     try:
 
         response = client.models.generate_content(
@@ -119,7 +130,6 @@ USER QUESTION:
         )
 
         if response and response.text:
-
             return response.text
 
         return "⚠️ Gemini did not return an answer."
@@ -128,6 +138,7 @@ USER QUESTION:
     except Exception as e:
 
         error_text = str(e).lower()
+
 
         # ----------------------------------------------------
         # Rate limit / quota
@@ -146,8 +157,9 @@ USER QUESTION:
                 "Please try Gemini again later."
             )
 
+
         # ----------------------------------------------------
-        # Model temporarily unavailable
+        # Service unavailable
         # ----------------------------------------------------
 
         if (
@@ -159,6 +171,7 @@ USER QUESTION:
                 "⚠️ Gemini is temporarily unavailable right now.\n\n"
                 "Please try again in a little while."
             )
+
 
         # ----------------------------------------------------
         # Other Gemini errors
@@ -186,10 +199,6 @@ def get_name_from_memory():
         previous_message = message["message"].strip()
 
         lower_message = previous_message.lower()
-
-        # Examples:
-        # My name is Ishita
-        # my name is Ishita.
 
         if lower_message.startswith("my name is "):
 
@@ -249,9 +258,9 @@ user_input = st.chat_input("Ask me anything...")
 
 if user_input:
 
-    # ========================================================
-    # SAVE USER MESSAGE
-    # ========================================================
+    # --------------------------------------------------------
+    # Save user message
+    # --------------------------------------------------------
 
     memory.add_message(
         "user",
@@ -259,17 +268,17 @@ if user_input:
     )
 
 
-    # ========================================================
-    # DISPLAY USER MESSAGE
-    # ========================================================
+    # --------------------------------------------------------
+    # Display user message
+    # --------------------------------------------------------
 
     with st.chat_message("user"):
         st.write(user_input)
 
 
-    # ========================================================
-    # DECIDE WHICH TOOL TO USE
-    # ========================================================
+    # --------------------------------------------------------
+    # Agent decides which tool to use
+    # --------------------------------------------------------
 
     tool = decide_tool(user_input)
 
@@ -306,14 +315,36 @@ if user_input:
 
     elif tool == "pdf":
 
+        # Retrieve relevant information from the PDF
         context = search_pdf(user_input)
 
         tool_name = "📚 PDF + RAG"
 
-        answer = ask_gemini(
+
+        # Send retrieved context to Gemini
+        gemini_answer = ask_gemini(
             user_input,
             context
         )
+
+
+        # ----------------------------------------------------
+        # RAG FALLBACK
+        # ----------------------------------------------------
+
+        if gemini_answer.startswith("⚠️ Gemini"):
+
+            answer = (
+                "📚 Relevant information found in your PDF:\n\n"
+                + context
+                + "\n\n"
+                "ℹ️ Gemini is currently unavailable, so the "
+                "retrieved PDF content is shown directly."
+            )
+
+        else:
+
+            answer = gemini_answer
 
 
     # ========================================================
@@ -324,13 +355,15 @@ if user_input:
 
         lower_input = user_input.lower().strip()
 
+
         # ----------------------------------------------------
-        # Store name in memory
+        # Store user's name
         # ----------------------------------------------------
 
         if lower_input.startswith("my name is "):
 
             name = user_input[11:].strip()
+
             name = name.rstrip(".!?")
 
             tool_name = "🧠 Conversation Memory"
@@ -342,7 +375,7 @@ if user_input:
 
 
         # ----------------------------------------------------
-        # Retrieve name from memory
+        # Retrieve user's name
         # ----------------------------------------------------
 
         elif (
@@ -354,6 +387,7 @@ if user_input:
             remembered_name = get_name_from_memory()
 
             tool_name = "🧠 Conversation Memory"
+
 
             if remembered_name:
 
@@ -368,7 +402,7 @@ if user_input:
 
 
         # ----------------------------------------------------
-        # Normal Gemini question
+        # General Gemini question
         # ----------------------------------------------------
 
         else:

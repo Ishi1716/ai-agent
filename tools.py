@@ -1,4 +1,6 @@
+
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 
 def calculator(expression):
@@ -15,4 +17,5 @@ def calculator(expression):
 
 
 def get_current_time():
-    return datetime.now().strftime("%I:%M %p")
+    india_time = datetime.now(ZoneInfo("Asia/Kolkata"))
+    return india_time.strftime("%I:%M %p")

@@ -6,7 +6,7 @@ from rag import split_text, search_chunks
 # LOAD PDF
 # ============================================================
 
-PDF_PATH = "pdfs/DBMS Notes.pdf"
+PDF_PATH = "pdfs/dbms.pdf"
 
 pdf_text = read_pdf(PDF_PATH)
 

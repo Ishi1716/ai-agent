@@ -3,3 +3,4 @@ python-dotenv
 streamlit
 pypdf
 scikit-learn
+google-generativeai

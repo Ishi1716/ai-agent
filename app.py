@@ -39,7 +39,10 @@ def get_gemini_client():
     api_key = os.getenv("GEMINI_API_KEY")
 
     if not api_key:
-        return None
+        try:
+            api_key = st.secrets["GEMINI_API_KEY"]
+        except Exception:
+            return None
 
     return genai.Client(api_key=api_key)
 
